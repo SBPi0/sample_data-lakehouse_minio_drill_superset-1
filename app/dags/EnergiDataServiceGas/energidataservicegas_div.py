@@ -4,7 +4,7 @@ import os                                   # contact to Operative System
 import airflow
 from airflow.decorators import dag, task
 
-from decouple import config                 # secret configs 
+from decouple import config                 # secret configs
 import requests                             #  for making HTTP requests
 import time
 from datetime import datetime               # for date and time manipulation
@@ -27,7 +27,8 @@ else:
     task = mock_decorator
 
 
-def pull_data(service: str, data_dir: str, data_name: str, data_timedate: datetime, page_size: int, params: dict) -> List[str]:
+def pull_data(service: str, data_dir: str, data_name: str, data_timedate: datetime, page_size: int, params: dict) -> \
+List[str]:
     """
         Hjælpefuntion til at lave api requests
 
@@ -37,27 +38,27 @@ def pull_data(service: str, data_dir: str, data_name: str, data_timedate: dateti
     page_index = 0
 
     fNames = []
-    
+
     while True:
         if not 'limit' in params.keys():
             params['limit'] = page_size
         params['offset'] = page_index * page_size
-        
-        r = requests.get(URL+service, params=params)
-        if r.status_code != requests.codes.ok: # response 200 etc
+
+        r = requests.get(URL + service, params=params)
+        if r.status_code != requests.codes.ok:  # response 200 etc
             print(r)
-            #print(r.headers)
+            # print(r.headers)
             print(r.text)
             print(params)
             raise Exception('http not 200 ok', r.text)
             break
         else:
-            rjson = r.json() # Extract JSON object
+            rjson = r.json()  # Extract JSON object
             print(f"Total number of records: {len(rjson['records'])}")
             # nFeatures += len(rjson['features'])
-            #print(rjson)
+            # print(rjson)
             print(params)
-        
+
         if len(rjson['records']) > 0:
             page_index += 1
             time_stamp = data_timedate.isoformat(timespec='seconds').replace(':', '.')
@@ -71,29 +72,28 @@ def pull_data(service: str, data_dir: str, data_name: str, data_timedate: dateti
     return fNames
 
 
-
-
 def setups():
-    """Getting config variable from system. 
+    """Getting config variable from system.
     `.env` file og `setting.ini` (or maybe even environment vars?).
-    Some of these are secret like api keys password etc. 
-    These shold NOT be in souce-code, where it could accidentially be shared to others. 
-    Therefore the file `.env` id NOT commited to git but added to `.gitignore`. 
+    Some of these are secret like api keys password etc.
+    These shold NOT be in souce-code, where it could accidentially be shared to others.
+    Therefore the file `.env` id NOT commited to git but added to `.gitignore`.
     There is an example `.env.example`, withou real sensible values."""
     global URL, data_dir, page_size
     URL = 'https://api.energidataservice.dk/'
-    data_dir = './dags/EnergiDataService/data'
+    data_dir = './dags/EnergiDataServiceGas/data'
     page_size = 1000
-    
+
 
 default_task_args = {
-    'retries' : 10,
-    'retry_delay' : timedelta(minutes=1),
-    'retry_exponential_backoff' : True,
+    'retries': 10,
+    'retry_delay': timedelta(minutes=1),
+    'retry_exponential_backoff': True,
 }
 
+
 @task
-def extract_ElectricityProdex(**kwargs):
+def extract_GasAllocation(**kwargs):
     """
     Produceret og import/export af el fra forskellige typer kilder
     hvert 5. minut
@@ -103,24 +103,26 @@ def extract_ElectricityProdex(**kwargs):
 
     """
     global URL, data_dir, page_size
-    service = 'dataset/ElectricityProdex5MinRealtime'
-    
+    service = 'dataset/GasAllocation'
+
     params = {}
-    #params['limit'] = 4
+    # params['limit'] = 4
     page_size = 2
 
     ts = datetime.fromisoformat(kwargs['ts'])
 
     params['start'] = (ts - timedelta(minutes=9)).replace(tzinfo=None).isoformat(timespec='minutes')
-    params['end']   = ts.replace(tzinfo=None).isoformat(timespec='minutes')
+    params['end'] = ts.replace(tzinfo=None).isoformat(timespec='minutes')
 
     print(params['start'], params['end'])
 
-    return pull_data(service, data_dir, 'ElectricityProdex', ts, page_size, params)
-    #https://api.energidataservice.dk/dataset/ElectricityProdex5MinRealtime?offset=0&start=2022-12-26T00:00&end=2022-12-27T00:00&sort=Minutes5UTC%20DESC&timezone=dk
+    return pull_data(service, data_dir, 'GasAllocation', ts, page_size, params)
+    # https://api.energidataservice.dk/dataset/ElectricityProdex5MinRealtime?offset=0&start=2022-12-26T00:00&end=2022-12-27T00:00&sort=Minutes5UTC%20DESC&timezone=dk
+
 
 @task
-def write_to_bucket(eProdex_jsons, table_path):
+#def write_to_bucket(eProdex_jsons2, table_patg):
+def write_to_bucket(gAllocation_jsons2, table_path):
     import pandas as pd
     from minio import Minio
     from io import BytesIO
@@ -128,7 +130,7 @@ def write_to_bucket(eProdex_jsons, table_path):
     import json
 
     # MINIO_BUCKET_NAME = os.getenv("MINIO_BUCKET_NAME")
-    MINIO_BUCKET_NAME = 'prodex-data'
+    MINIO_BUCKET_NAME = 'gas-data'
     # MINIO_ROOT_USER = os.getenv("MINIO_ROOT_USER")
     # MINIO_ROOT_PASSWORD = os.getenv("MINIO_ROOT_PASSWORD")
 
@@ -149,32 +151,30 @@ def write_to_bucket(eProdex_jsons, table_path):
     else:
         print(f"Bucket '{MINIO_BUCKET_NAME}' already exists!")
 
-    for prodex_json_filepath in eProdex_jsons:
-        
+    for gAllocation_json_filepath in gAllocation_jsons2:
         # df = pd.DataFrame(tweet_list)
         # file_data = df.to_parquet(index=False)
-        with open(prodex_json_filepath, 'r') as jf:
-            prodex_json = json.load(jf)
+        with open(gAllocation_json_filepath, 'r') as jf:
+            gAllocation_json = json.load(jf)
         # rec_list = prodex_json['records']
         # df = pd.read_json(prodex_json_filepath)
-        df = pd.DataFrame(prodex_json['records'])
+        df = pd.DataFrame(gAllocation_json['records'])
         print(df)
         file_data = df.to_parquet(index=False)
 
-        prodex_filename = prodex_json_filepath.split('/')[-1]
+        gAllocation_filename = gAllocation_json_filepath.split('/')[-1]
         # Put parquet data in the bucket
         filename = (
             # f"tweets/{batchDatetime.strftime('%Y/%m/%d')}/elon_tweets_{batchDatetime.strftime('%H%M%S')}_{batchId}.parquet"
-            f"{table_path}/{prodex_filename}.parquet"
+            f"{table_path}/{gAllocation_filename}.parquet"
         )
         client.put_object(
             MINIO_BUCKET_NAME, filename, data=BytesIO(file_data), length=len(file_data), content_type="application/csv"
         )
-        os.remove(prodex_json_filepath)
+        os.remove(gAllocation_json_filepath)
 
-
-@dag( 
-    dag_id='electrical_power_gross',
+@dag(
+    dag_id='gas_allocation',
     schedule=timedelta(minutes=5),
     start_date=pendulum.datetime(2023, 6, 1, 0, 0, 0, tz="Europe/Copenhagen"),
     catchup=True,
@@ -182,50 +182,50 @@ def write_to_bucket(eProdex_jsons, table_path):
     max_active_runs=5,
     tags=['experimental', 'energy', 'rest api'],
     default_args=default_task_args,)
-def electrical_power_gross():
-    print("Doing energy_data")
+def gas_allocation():
+    print("Doing gas_data")
     setups()
     if __name__ != "__main__": # as in "normal" operation as DAG stated in Airflow
-        eProdex_jsons = extract_ElectricityProdex()
+        gAllocation_jsons = extract_GasAllocation()
     else: # more or less test mode
-        eProdex_jsons = extract_ElectricityProdex(ts=datetime.now().isoformat())
-    write_to_bucket(eProdex_jsons, 'live')
+        gAllocation_jsons = extract_GasAllocation(ts=datetime.now().isoformat())
+    write_to_bucket(gAllocation_jsons, 'live')
+
 
 @task
-def extract_ElectricityProdex_back(**kwargs):
+def extract_GasAllocation_back(**kwargs):
     """
     Produceret og import/export af el fra forskellige typer kilder
     hent historisk data
 
     https://www.energidataservice.dk/tso-electricity/ElectricityProdex5MinRealtime#metadata-info
     https://www.energidataservice.dk/guides/api-guides
-    
+
     """
     global URL, data_dir, page_size
-    service = 'dataset/ElectricityProdex5MinRealtime'
-    
-    params = {}
-    #params['limit'] = 4
-    #page_size = 500
+    service = 'dataset/GasAllocation'
 
-    #print('kwargs:', kwargs)
+    params = {}
+    # params['limit'] = 4
+    # page_size = 500
+
+    # print('kwargs:', kwargs)
     for k, v in kwargs.items():
         print(k, '=', v)
 
     ts = datetime.fromisoformat(kwargs['ts'])
 
     params['start'] = kwargs['data_interval_start'].replace(tzinfo=None).isoformat(timespec='minutes')
-    params['end']   = kwargs['data_interval_end'].replace(tzinfo=None).isoformat(timespec='minutes')
+    params['end'] = kwargs['data_interval_end'].replace(tzinfo=None).isoformat(timespec='minutes')
 
-    #print(params['start'], params['end'])
+    # print(params['start'], params['end'])
 
-    return pull_data(service, data_dir, 'ElectricityProdex_back', ts, page_size, params)
-    #return 'dummy'
-    #https://api.energidataservice.dk/dataset/ElectricityProdex5MinRealtime?offset=0&start=2022-12-26T00:00&end=2022-12-27T00:00&sort=Minutes5UTC%20DESC&timezone=dk
+    return pull_data(service, data_dir, 'GasAllocation_back', ts, page_size, params)
+    # return 'dummy'
+    # https://api.energidataservice.dk/dataset/ElectricityProdex5MinRealtime?offset=0&start=2022-12-26T00:00&end=2022-12-27T00:00&sort=Minutes5UTC%20DESC&timezone=dk
 
-
-@dag( 
-    dag_id='electrical_power_gross_back',
+@dag(
+    dag_id='gas_allocation_back',
     schedule='@monthly',
     #end_date=pendulum.datetime(2023, 6, 1, 0, 0, 0, tz="Europe/Copenhagen"),
     start_date=pendulum.datetime(2014, 12, 31, 23, 0, 0, tz="Europe/Copenhagen"),
@@ -234,21 +234,21 @@ def extract_ElectricityProdex_back(**kwargs):
     max_active_runs=5,
     tags=['experimental', 'energy', 'rest api'],
     default_args=default_task_args,)
-def electrical_power_gross_back():
-    print("Doing energy_data")
+def gas_allocation_back():
+    print("Doing gas_data")
     setups()
     if __name__ != "__main__": # as in "normal" operation as DAG stated in Airflow
-        eProdex_jsons = extract_ElectricityProdex_back()
+        gAllocation_jsons = extract_GasAllocation_back()
     else: # more or less test mode
         args = {
             'ts': datetime.now().isoformat(),
             'data_interval_end' : datetime.fromisoformat("2021-01-31T23:00:00+00:00"),
             'data_interval_start' : datetime.fromisoformat("2020-12-31T23:00:00+00:00"),
         }
-        eProdex_jsons = extract_ElectricityProdex_back(**args)
-    write_to_bucket(eProdex_jsons, 'back')
+        gAllocation_jsons = extract_GasAllocation_back(**args)
+    write_to_bucket(gAllocation_jsons, 'back')
 
 
 
-electrical_power_gross()
-electrical_power_gross_back()
+gas_allocation()
+gas_allocation_back()
