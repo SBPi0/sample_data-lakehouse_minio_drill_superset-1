@@ -95,10 +95,9 @@ default_task_args = {
 @task
 def extract_GasAllocation(**kwargs):
     """
-    Produceret og import/export af el fra forskellige typer kilder
-    hvert 5. minut
+    Tildeing af gas hver time
 
-    https://www.energidataservice.dk/tso-electricity/ElectricityProdex5MinRealtime#metadata-info
+    https://www.energidataservice.dk/tso-gas/GasAllocation#metadata-info
     https://www.energidataservice.dk/guides/api-guides
 
     """
@@ -121,8 +120,7 @@ def extract_GasAllocation(**kwargs):
 
 
 @task
-#def write_to_bucket(eProdex_jsons2, table_patg):
-def write_to_bucket(gAllocation_jsons2, table_path):
+def write_to_bucket(gAllocation_jsons, table_path):
     import pandas as pd
     from minio import Minio
     from io import BytesIO
@@ -151,13 +149,9 @@ def write_to_bucket(gAllocation_jsons2, table_path):
     else:
         print(f"Bucket '{MINIO_BUCKET_NAME}' already exists!")
 
-    for gAllocation_json_filepath in gAllocation_jsons2:
-        # df = pd.DataFrame(tweet_list)
-        # file_data = df.to_parquet(index=False)
+    for gAllocation_json_filepath in gAllocation_jsons:
         with open(gAllocation_json_filepath, 'r') as jf:
             gAllocation_json = json.load(jf)
-        # rec_list = prodex_json['records']
-        # df = pd.read_json(prodex_json_filepath)
         df = pd.DataFrame(gAllocation_json['records'])
         print(df)
         file_data = df.to_parquet(index=False)
@@ -165,7 +159,6 @@ def write_to_bucket(gAllocation_jsons2, table_path):
         gAllocation_filename = gAllocation_json_filepath.split('/')[-1]
         # Put parquet data in the bucket
         filename = (
-            # f"tweets/{batchDatetime.strftime('%Y/%m/%d')}/elon_tweets_{batchDatetime.strftime('%H%M%S')}_{batchId}.parquet"
             f"{table_path}/{gAllocation_filename}.parquet"
         )
         client.put_object(
@@ -192,63 +185,4 @@ def gas_allocation():
     write_to_bucket(gAllocation_jsons, 'live')
 
 
-@task
-def extract_GasAllocation_back(**kwargs):
-    """
-    Produceret og import/export af el fra forskellige typer kilder
-    hent historisk data
-
-    https://www.energidataservice.dk/tso-electricity/ElectricityProdex5MinRealtime#metadata-info
-    https://www.energidataservice.dk/guides/api-guides
-
-    """
-    global URL, data_dir, page_size
-    service = 'dataset/GasAllocation'
-
-    params = {}
-    # params['limit'] = 4
-    # page_size = 500
-
-    # print('kwargs:', kwargs)
-    for k, v in kwargs.items():
-        print(k, '=', v)
-
-    ts = datetime.fromisoformat(kwargs['ts'])
-
-    params['start'] = kwargs['data_interval_start'].replace(tzinfo=None).isoformat(timespec='minutes')
-    params['end'] = kwargs['data_interval_end'].replace(tzinfo=None).isoformat(timespec='minutes')
-
-    # print(params['start'], params['end'])
-
-    return pull_data(service, data_dir, 'GasAllocation_back', ts, page_size, params)
-    # return 'dummy'
-    # https://api.energidataservice.dk/dataset/ElectricityProdex5MinRealtime?offset=0&start=2022-12-26T00:00&end=2022-12-27T00:00&sort=Minutes5UTC%20DESC&timezone=dk
-
-@dag(
-    dag_id='gas_allocation_back',
-    schedule='@monthly',
-    #end_date=pendulum.datetime(2023, 6, 1, 0, 0, 0, tz="Europe/Copenhagen"),
-    start_date=pendulum.datetime(2014, 12, 31, 23, 0, 0, tz="Europe/Copenhagen"),
-    catchup=True,
-    max_active_tasks=5,
-    max_active_runs=5,
-    tags=['experimental', 'energy', 'rest api'],
-    default_args=default_task_args,)
-def gas_allocation_back():
-    print("Doing gas_data")
-    setups()
-    if __name__ != "__main__": # as in "normal" operation as DAG stated in Airflow
-        gAllocation_jsons = extract_GasAllocation_back()
-    else: # more or less test mode
-        args = {
-            'ts': datetime.now().isoformat(),
-            'data_interval_end' : datetime.fromisoformat("2021-01-31T23:00:00+00:00"),
-            'data_interval_start' : datetime.fromisoformat("2020-12-31T23:00:00+00:00"),
-        }
-        gAllocation_jsons = extract_GasAllocation_back(**args)
-    write_to_bucket(gAllocation_jsons, 'back')
-
-
-
 gas_allocation()
-gas_allocation_back()
